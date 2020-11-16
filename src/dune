@@ -1,0 +1,19 @@
+(library
+ (name odup)
+ (libraries ctypes ctypes.foreign async_find camlzip bst fmt)
+ (preprocess (pps ppx_let ppx_compare))
+ (library_flags (-cclib -lpHash)))
+
+(data_only_dirs phash)
+
+; (rule
+;  (deps (source_tree phash))
+;  (targets libphash.a)
+;  (action
+;   (no-infer
+;    (progn
+;     (chdir phash
+;      (progn
+;       (run cmake .)
+;       (run make)))
+;     (copy phash/libpHash.a libphash.a)))))

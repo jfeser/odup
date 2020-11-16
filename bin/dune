@@ -1,0 +1,5 @@
+(executable
+ (name odup)
+ (libraries core async odup fmt)
+ (preprocess (pps ppx_let))
+ )
