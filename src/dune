@@ -1,7 +1,7 @@
 (library
  (name odup)
- (libraries ctypes ctypes.foreign async_find camlzip bst fmt)
- (preprocess (pps ppx_let ppx_compare))
+ (libraries core async rpc_parallel ctypes ctypes.foreign async_find camlzip bst fmt)
+ (preprocess (pps ppx_jane))
  (library_flags (-cclib -lpHash)))
 
 (data_only_dirs phash)

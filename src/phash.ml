@@ -6,11 +6,11 @@ let libphash =
 
 let ph_dct_imagehash_jpeg =
   foreign ~from:libphash ~release_runtime_lock:true "ph_dct_imagehash_jpeg"
-    (ptr void @-> ptr uint64_t @-> returning int)
+    (ptr void @-> ptr int64_t @-> returning int)
 
 let ph_dct_imagehash_png =
   foreign ~from:libphash ~release_runtime_lock:true "ph_dct_imagehash_png"
-    (ptr void @-> ptr uint64_t @-> returning int)
+    (ptr void @-> ptr int64_t @-> returning int)
 
 let fmemopen =
   foreign "fmemopen" (string @-> size_t @-> string @-> returning (ptr void))
@@ -19,9 +19,9 @@ let fclose = foreign "fclose" (ptr void @-> returning int)
 
 let dct_image_hash hasher img =
   let file = fmemopen img (Unsigned.Size_t.of_int @@ String.length img) "r" in
-  let hash = allocate uint64_t Unsigned.UInt64.zero in
+  let hash = allocate int64_t 0L in
   let ret = hasher file hash in
-  fclose file |> ignore;
+  (fclose file : _) |> ignore;
   if ret = 0 then Some !@hash else None
 
 let dct_jpeg_hash = dct_image_hash ph_dct_imagehash_jpeg

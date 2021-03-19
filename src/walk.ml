@@ -1,112 +1,105 @@
 open! Core
 open! Async
 
-module Image_ref = struct
-  type 'a t = {
-    filename : string;
-    archive : string option;
-    kind : [ `Png | `Jpeg ];
-    hash : 'a; [@ignore]
-  }
-  [@@deriving compare]
-
-  let pp ?pp_hash fmt x =
-    match pp_hash with
-    | Some pp_hash -> Fmt.pf fmt "%s/%a" x.filename pp_hash x.hash
-    | None -> Fmt.pf fmt "%s" x.filename
-end
+let classify name =
+  let _, ext = Filename.split_extension name in
+  match ext with
+  | Some "jpg" | Some "jpeg" -> `Jpeg
+  | Some "png" -> `Png
+  | _ -> `Other
 
 module Image = struct
-  type t = { image_ref : unit Image_ref.t; contents : string }
+  type t = {
+    filename : string;
+    archive : string;
+    kind : [ `Png | `Jpeg ];
+    hash : int64;
+  }
+  [@@deriving bin_io, compare, sexp]
+
+  let create ~kind ~filename ~archive ~hash = { filename; archive; kind; hash }
 end
 
-let images dir =
-  let open Async.Let_syntax in
+open Image
+
+module Hash_images_map_function =
+Rpc_parallel.Map_reduce.Make_map_function (struct
+  module Input = struct
+    type t = string [@@deriving bin_io]
+  end
+
+  module Output = struct
+    type t = Image.t list [@@deriving bin_io]
+  end
+
+  let map archive =
+    let zip = Zip.open_in archive in
+    let hashes =
+      Exn.protect
+        ~f:(fun () ->
+          List.filter_map (Zip.entries zip) ~f:(fun entry ->
+              let filename = entry.Zip.filename in
+              match classify filename with
+              | (`Jpeg | `Png) as kind ->
+                  let hash =
+                    let contents = Zip.read_entry zip entry in
+                    Option.value_exn ~message:"hashing failed"
+                      (Phash.dct_hash contents kind)
+                  in
+                  Some (Image.create ~kind ~filename ~archive ~hash)
+              | `Other -> None))
+        ~finally:(fun () -> Zip.close_in zip)
+    in
+    return hashes
+end)
+
+module Find_duplicates_map_impl = struct
+  module Param = struct
+    type t = { tol : float; all_images : Image.t list } [@@deriving bin_io]
+  end
+
+  module Input = struct
+    type t = Image.t list [@@deriving bin_io]
+  end
+
+  module Output = struct
+    type t = (Image.t * Image.t) list [@@deriving bin_io]
+  end
+
+  type state_type = Param.t
+
+  let init = return
+
+  let hamming_dist x x' =
+    Unsigned.UInt64.(logxor x x' |> to_int64 |> Int64.popcount)
+
+  let dist h h' =
+    let to_uint64 = Unsigned.UInt64.of_int64 in
+    hamming_dist (to_uint64 h.hash) (to_uint64 h'.hash) |> Float.of_int
+
+  let map Param.{ tol; all_images } images =
+    return
+    @@ List.concat_map all_images ~f:(fun img ->
+           List.filter_map images ~f:(fun img' ->
+               if
+                 (not ([%compare.equal: Image.t] img img'))
+                 && Float.(dist img img' <= tol)
+               then Some (img, img')
+               else None))
+end
+
+module Find_duplicates_map_function =
+  Rpc_parallel.Map_reduce.Make_map_function_with_init (Find_duplicates_map_impl)
+
+let find_archives dir =
   let classify name =
     let _, ext = Filename.split_extension name in
-    match ext with
-    | Some "jpg" | Some "jpeg" -> `Image `Jpeg
-    | Some "png" -> `Image `Png
-    | Some "zip" | Some "cbz" -> `Zip
-    | _ -> `Other
+    match ext with Some "zip" | Some "cbz" -> `Zip | _ -> `Other
   in
   let filter (name, _) =
-    match classify name with
-    | `Image _ | `Zip -> return true
-    | `Other -> return false
+    match classify name with `Zip -> return true | `Other -> return false
   in
   let options = Async_find.{ Options.default with filter = Some filter } in
   let find = Async_find.create ~options dir in
-  Pipe.create_reader ~close_on_exception:true (fun pipe ->
-      Async_find.iter find ~f:(fun (fn, _) ->
-          match classify fn with
-          | `Other -> return ()
-          | `Image kind ->
-              Pipe.write pipe
-                Image.
-                  {
-                    image_ref =
-                      { filename = fn; archive = None; kind; hash = () };
-                    contents = In_channel.read_all fn;
-                  }
-          | `Zip ->
-              let zip = Zip.open_in fn in
-              let%bind () =
-                Zip.entries zip
-                |> Deferred.List.iter ~f:(fun entry ->
-                       match classify entry.Zip.filename with
-                       | `Image kind ->
-                           let image_ref =
-                             Image_ref.
-                               {
-                                 filename = entry.filename;
-                                 archive = Some fn;
-                                 kind;
-                                 hash = ();
-                               }
-                           in
-                           Pipe.write pipe
-                             Image.
-                               {
-                                 image_ref;
-                                 contents = Zip.read_entry zip entry;
-                               }
-                       | `Zip | `Other -> return ())
-              in
-              Zip.close_in zip;
-              return ()))
-
-let hashes images =
-  Pipe.map images ~f:(fun Image.{ image_ref; contents } ->
-      let hash =
-        Option.value_exn ~message:"hashing failed"
-          (Phash.dct_hash contents image_ref.kind)
-      in
-      { image_ref with hash })
-
-module Hash_tree = Bst.Bisec_tree.Make (struct
-  type t = Unsigned.UInt64.t Image_ref.t
-
-  let dist _ _ = failwith ""
-end)
-
-let hamming_dist x x' =
-  Unsigned.UInt64.(logxor x x' |> to_int64 |> Int64.popcount)
-
-let dist h h' = hamming_dist h.Image_ref.hash h'.Image_ref.hash |> Float.of_int
-
-let find_duplicates ~tol hashes =
-  let pp_ref = Image_ref.pp ~pp_hash:Unsigned.UInt64.pp in
-  let%bind hashes = Pipe.to_list hashes in
-  Fmt.pr "Got %d hashes: %a@." (List.length hashes)
-    (Fmt.Dump.list (Image_ref.pp ~pp_hash:Unsigned.UInt64.pp))
-    hashes;
-  return
-  @@ List.filter_map hashes ~f:(fun h ->
-         let dups =
-           List.filter hashes ~f:(fun h' ->
-               let d = Float.(dist h h') in
-               Fmt.pr "h=%a, h'=%a, dist=%f\n" pp_ref h pp_ref h' d;
-               (not ([%compare.equal: _ Image_ref.t] h h')) && Float.(d <= tol))
-         in
-         if List.length dups <= 1 then None else Some dups)
+  Pipe.create_reader ~close_on_exception:false @@ fun w ->
+  Async_find.iter find ~f:(fun (fn, _) -> Pipe.write w fn)
