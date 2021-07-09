@@ -83,6 +83,7 @@ module Find_duplicates_map_impl = struct
            List.filter_map images ~f:(fun img' ->
                if
                  (not ([%compare.equal: Image.t] img img'))
+                 && [%compare: string] img.archive img'.archive < 0
                  && Float.(dist img img' <= tol)
                then Some (img, img')
                else None))

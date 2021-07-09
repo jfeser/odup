@@ -45,7 +45,27 @@ let main ~nworkers ~tol ~dir =
     >>| List.concat
   in
   Print.printf "\n";
-  print_s [%message (dupes : (Image.t * Image.t) list)];
+
+  let module Archives = struct
+    module T = struct
+      type t = string * string [@@deriving compare, sexp]
+    end
+
+    include T
+    include Comparator.Make (T)
+  end in
+  let dupe_counts =
+    List.fold_left dupes
+      ~init:(Map.empty (module Archives))
+      ~f:(fun m (i, i') ->
+        Map.update m (i.Image.archive, i'.Image.archive) ~f:(function
+          | Some c -> c + 1
+          | None -> 1))
+    |> Map.to_alist
+    |> List.stable_sort ~compare:(fun (_, c) (_, c') -> [%compare: int] c c')
+  in
+
+  print_s [%message (dupe_counts : (Archives.t * int) list)];
   Deferred.unit
 
 let command =

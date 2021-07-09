@@ -1,5 +1,6 @@
 (executable
  (name odup)
+ (public_name odup)
  (libraries core async odup fmt progress)
  (modules odup)
  (preprocess (pps ppx_jane)))
