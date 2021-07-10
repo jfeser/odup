@@ -1,0 +1,19 @@
+(library
+ (name phash_c)
+ (preprocess no_preprocessing)
+ (c_library_flags :standard -lpthread)
+ (foreign_archives phash_c_stubs))
+
+(rule
+ (targets libphash_c_stubs.a dllphash_c_stubs.so)
+ (deps (source_tree phash))
+ (action
+  (bash
+    "\
+   \n(cd phash && ./configure --disable-video-hash --disable-audio-hash LIBS='-lpthread')\
+   \n%{make} -s -C phash clean\
+   \n%{make} -s -C phash\
+   \ncp phash/src/.libs/libpHash.a libphash_c_stubs.a\
+   \ncp phash/src/.libs/libpHash.so dllphash_c_stubs.so\
+   \n%{make} -s -C phash clean\
+   \n")))
