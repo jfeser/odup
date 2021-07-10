@@ -1,21 +1,5 @@
 open Ctypes
-open Foreign
-
-let libphash =
-  Dl.dlopen ~flags:[ Dl.RTLD_LAZY ] ~filename:"/usr/local/lib/libpHash.so"
-
-let ph_dct_imagehash_jpeg =
-  foreign ~from:libphash ~release_runtime_lock:true "ph_dct_imagehash_jpeg"
-    (ptr void @-> ptr int64_t @-> returning int)
-
-let ph_dct_imagehash_png =
-  foreign ~from:libphash ~release_runtime_lock:true "ph_dct_imagehash_png"
-    (ptr void @-> ptr int64_t @-> returning int)
-
-let fmemopen =
-  foreign "fmemopen" (string @-> size_t @-> string @-> returning (ptr void))
-
-let fclose = foreign "fclose" (ptr void @-> returning int)
+include Phash_bindings.Bindings (Phash_generated_stubs)
 
 let dct_image_hash hasher img =
   let file = fmemopen img (Unsigned.Size_t.of_int @@ String.length img) "r" in

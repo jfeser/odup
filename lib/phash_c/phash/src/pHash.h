@@ -297,6 +297,8 @@ static CImg<float>* ph_dct_matrix(const int N);
  *  /return int value - -1 for failure, 1 for success
  */
 int ph_dct_imagehash(const char* file,ulong64 &hash);
+int ph_dct_imagehash_jpeg(FILE *const file, ulong64 &hash);
+int ph_dct_imagehash_png(FILE *const file, ulong64 &hash);
 
 int ph_bmb_imagehash(const char *file, uint8_t method, BinHash **ret_hash);
 #endif

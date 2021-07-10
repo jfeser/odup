@@ -1,6 +1,7 @@
 (library
  (name phash_c)
  (preprocess no_preprocessing)
+ (library_flags -cclib -lstdc++ -cclib -lpng -cclib -ljpeg)
  (c_library_flags :standard -lpthread)
  (foreign_archives phash_c_stubs))
 

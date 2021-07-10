@@ -1,9 +1,35 @@
 (library
  (name odup)
- (libraries core async rpc_parallel ctypes ctypes.foreign async_find camlzip fmt phash_c)
- (preprocess (pps ppx_jane)))
+ (libraries core async rpc_parallel ctypes ctypes.foreign async_find camlzip fmt phash_c phash_bindings)
+ (preprocess (pps ppx_jane))
+ (modules phash walk phash_generated_stubs)
+ (library_flags -cclib -lstdc++)
+ (foreign_stubs (language c) (names phash_generated_stubs)))
 
-(data_only_dirs phash)
+(library
+ (name phash_bindings)
+ (libraries ctypes)
+ (modules phash_bindings))
+
+(executable
+ (name phash_gen_ml)
+ (libraries ctypes.stubs phash_bindings)
+ (modules phash_gen_ml))
+
+(executable
+ (name phash_gen_c)
+ (libraries ctypes.stubs phash_bindings)
+ (modules phash_gen_c))
+
+(rule
+ (target phash_generated_stubs.ml)
+ (deps (:gen phash_gen_ml.exe))
+ (action (with-stdout-to %{target} (run %{gen}))))
+
+(rule
+ (target phash_generated_stubs.c)
+ (deps (:gen phash_gen_c.exe))
+ (action (with-stdout-to %{target} (run %{gen}))))
 
 ; (rule
 ;  (deps (source_tree phash))
